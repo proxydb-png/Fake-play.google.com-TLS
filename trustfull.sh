@@ -1,46 +1,46 @@
 #!/bin/bash
 # ================================================
-# XTLS Reality - Trust Building نهایی
-# Certificate واقعی گوگل + ترافیک از بیرون
+# XTLS Reality + Trust Building کامل
 # ================================================
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-RED='\033[0;31m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-clear
-echo -e "${CYAN}"
-echo "╔══════════════════════════════════════════════╗"
-echo "║  XTLS Reality - Google Play Simulation      ║"
-echo "║  Trust Building از بیرون                    ║"
-echo "╚══════════════════════════════════════════════╝"
-echo -e "${NC}"
-
-# ================================================
-# ۱. نصب Xray
-# ================================================
-echo -e "${GREEN}📦 Installing Xray...${NC}"
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+echo -e "${CYAN}╔══════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║  XTLS Reality - Complete Setup           ║${NC}"
+echo -e "${CYAN}╚══════════════════════════════════════════╝${NC}"
 echo ""
 
 # ================================================
-# ۲. تولید کلیدها
+# ۱. نصب
 # ================================================
-echo -e "${GREEN}🔑 Generating keys...${NC}"
+echo -e "${GREEN}[۱/۷] Installing packages...${NC}"
+apt-get update -qq
+apt-get install -y -qq unzip curl openssl > /dev/null 2>&1
+
+if [ ! -f /usr/local/bin/xray ]; then
+    bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install > /dev/null 2>&1
+fi
+echo -e "${GREEN}✅ Done${NC}"
+
+# ================================================
+# ۲. کلیدها
+# ================================================
+echo -e "${GREEN}[۲/۷] Generating keys...${NC}"
 UUID=$(cat /proc/sys/kernel/random/uuid)
-KEYPAIR=$(xray x25519)
-PRIVATE_KEY=$(echo "$KEYPAIR" | grep "Private" | awk '{print $3}')
-PUBLIC_KEY=$(echo "$KEYPAIR" | grep "Public" | awk '{print $3}')
+KEYPAIR=$(/usr/local/bin/xray x25519)
+PRIVATE_KEY=$(echo "$KEYPAIR" | grep "PrivateKey" | awk -F': ' '{print $2}')
+PUBLIC_KEY=$(echo "$KEYPAIR" | grep "PublicKey" | awk -F': ' '{print $2}')
 SHORT_ID=$(openssl rand -hex 8)
 SERVER_IP=$(curl -s ifconfig.me)
-echo ""
+echo -e "${GREEN}✅ Done${NC}"
 
 # ================================================
-# ۳. ساخت کانفیگ Xray با Reality
+# ۳. کانفیگ Xray
 # ================================================
-echo -e "${GREEN}⚙️ Creating Xray config...${NC}"
+echo -e "${GREEN}[۳/۷] Creating Xray config...${NC}"
 
 cat > /usr/local/etc/xray/config.json << EOF
 {
@@ -72,24 +72,60 @@ cat > /usr/local/etc/xray/config.json << EOF
 EOF
 
 systemctl restart xray
-systemctl enable xray
+systemctl enable xray > /dev/null 2>&1
+echo -e "${GREEN}✅ Done${NC}"
+
+# ================================================
+# ۴. Trust Building از بیرون (سرور ایران)
+# ================================================
+echo -e "${GREEN}[۴/۷] Setting up Trust Building...${NC}"
+
+echo -e "${YELLOW}برای Trust Building از بیرون، این کارها رو بکن:${NC}"
 echo ""
-
-# ================================================
-# ۴. فایروال - باز کردن 443
-# ================================================
-echo -e "${GREEN}🛡️ Setting firewall...${NC}"
-iptables -t nat -F PREROUTING
-iptables -t nat -A PREROUTING -p tcp --dport 22 -j ACCEPT
-iptables -t nat -A PREROUTING -p tcp --dport 443 -j REDIRECT --to-port 443
+echo -e "${CYAN}روی سرور ایران (یا هر سرور دیگه) اینو اجرا کن:${NC}"
 echo ""
+echo -e "${GREEN}cat > /opt/trust.sh << 'EOF'${NC}"
+echo -e "#!/bin/bash"
+echo -e "TARGET=\"$SERVER_IP\""
+echo -e "while true; do"
+echo -e "    curl -s -k \"https://\$TARGET\" \\\\"
+echo -e "        --resolve \"play.google.com:443:\$TARGET\" \\\\"
+echo -e "        -H \"Host: play.google.com\" \\\\"
+echo -e "        -o /dev/null 2>/dev/null"
+echo -e "    sleep 10"
+echo -e "done"
+echo -e "EOF"
+echo -e "chmod +x /opt/trust.sh"
+echo -e "nohup /opt/trust.sh &"
+echo -e "${NC}"
+echo ""
+echo -e "${GREEN}✅ Trust Building آماده شد${NC}"
 
 # ================================================
-# ۵. ساخت لینک VLESS
+# ۵. Trust Building محلی (اختیاری)
 # ================================================
-VLESS_LINK="vless://$UUID@$SERVER_IP:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=play.google.com&fp=chrome&pbk=$PUBLIC_KEY&sid=$SHORT_ID&type=tcp#Google-Play"
+echo -e "${GREEN}[۵/۷] Starting local trust...${NC}"
 
-# ذخیره
+cat > /usr/local/bin/trust-local.sh << EOF
+#!/bin/bash
+while true; do
+    curl -s -k "https://$SERVER_IP" \
+        --resolve "play.google.com:443:$SERVER_IP" \
+        -H "Host: play.google.com" \
+        -o /dev/null 2>/dev/null &
+    sleep \$((RANDOM % 30 + 15))
+done
+EOF
+
+chmod +x /usr/local/bin/trust-local.sh
+nohup /usr/local/bin/trust-local.sh > /dev/null 2>&1 &
+echo -e "${GREEN}✅ Done${NC}"
+
+# ================================================
+# ۶. ذخیره
+# ================================================
+echo -e "${GREEN}[۶/۷] Saving config...${NC}"
+
 cat > /root/reality_config.txt << EOF
 Server: $SERVER_IP
 Port: 443
@@ -97,44 +133,31 @@ UUID: $UUID
 SNI: play.google.com
 Public Key: $PUBLIC_KEY
 Short ID: $SHORT_ID
-VLESS: $VLESS_LINK
+VLESS: vless://$UUID@$SERVER_IP:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=play.google.com&fp=chrome&pbk=$PUBLIC_KEY&sid=$SHORT_ID&type=tcp#Google-Play
 EOF
 
-# ================================================
-# ۶. نمایش نتیجه
-# ================================================
-echo -e "${GREEN}╔══════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║     ✅ XTLS Reality فعال شد!             ║${NC}"
-echo -e "${GREEN}╚══════════════════════════════════════════╝${NC}"
-echo ""
-echo -e "${YELLOW}📊 اطلاعات:${NC}"
-echo -e "  IP: ${GREEN}$SERVER_IP${NC}"
-echo -e "  Port: ${GREEN}443${NC}"
-echo -e "  SNI: ${GREEN}play.google.com${NC}"
-echo -e "  Certificate: ${GREEN}واقعی Google Play${NC}"
-echo ""
-echo -e "${YELLOW}🎯 DPI الان می‌بینه:${NC}"
-echo -e "  ✅ Certificate واقعی گوگل"
-echo -e "  ✅ TLS 1.3 واقعی"
-echo -e "  ✅ SNI: play.google.com"
-echo -e "  ✅ بدون هیچ اروری"
-echo ""
-echo -e "${YELLOW}⏳ مراحل بعدی:${NC}"
-echo -e "  1. ${GREEN}۳۰-۶۰ دقیقه صبر کن${NC} (Trust Building)"
-echo -e "  2. ${GREEN}systemctl stop xray${NC}"
-echo -e "  3. ${GREEN}پروکسی MTProto روشن کن${NC}"
-echo -e "  4. ${GREEN}لینک تلگرام بده به کاربرا${NC}"
-echo ""
-echo -e "${YELLOW}📱 VLESS Link (اختیاری):${NC}"
-echo -e "${GREEN}$VLESS_LINK${NC}"
-echo ""
-echo -e "${YELLOW}💾 Config:${NC} ${GREEN}/root/reality_config.txt${NC}"
-echo ""
+echo -e "${GREEN}✅ Done${NC}"
 
 # ================================================
 # ۷. تست
 # ================================================
-echo -e "${CYAN}🧪 Testing...${NC}"
+echo -e "${GREEN}[۷/۷] Testing...${NC}"
 sleep 2
-echo -e "  Certificate: $(echo | openssl s_client -connect $SERVER_IP:443 -servername play.google.com 2>/dev/null | openssl x509 -noout -subject 2>/dev/null | grep -o 'CN=.*' || echo 'OK')"
+CERT=$(echo | openssl s_client -connect $SERVER_IP:443 -servername play.google.com 2>/dev/null | openssl x509 -noout -subject 2>/dev/null | grep -o 'CN=.*')
+
+echo ""
+echo -e "${GREEN}╔══════════════════════════════════════════╗${NC}"
+echo -e "${GREEN}║     ✅ Complete!                         ║${NC}"
+echo -e "${GREEN}╚══════════════════════════════════════════╝${NC}"
+echo ""
+echo -e "  IP: ${GREEN}$SERVER_IP${NC}"
+echo -e "  Port: ${GREEN}443${NC}"
+echo -e "  SNI: ${GREEN}play.google.com${NC}"
+echo -e "  Certificate: ${GREEN}$CERT${NC}"
+echo ""
+echo -e "${YELLOW}📋 بعد از ۳۰-۶۰ دقیقه:${NC}"
+echo -e "  ${CYAN}systemctl stop xray${NC}"
+echo -e "  ${CYAN}# پروکسی MTProto روشن کن${NC}"
+echo ""
+echo -e "${YELLOW}💾 Config:${NC} /root/reality_config.txt"
 echo ""
